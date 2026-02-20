@@ -344,4 +344,5 @@ class StrictProxyCollector:
                 print(f"[{k.upper()}] Saved {len(v)} unique proxies.")
 
 # Execute
-await StrictProxyCollector().pipeline()
+if __name__ == "__main__":
+    asyncio.run(StrictProxyCollector().pipeline())
