@@ -25,7 +25,7 @@ jobs:
         run: pip install aiohttp aiohttp_socks maxminddb
 
       - name: Run script
-        run: python your_script.py
+        run: python script.py
 
       - name: Commit & Push
         run: |
