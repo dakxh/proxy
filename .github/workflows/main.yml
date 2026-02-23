@@ -2,8 +2,11 @@ name: Run Proxy Collector
 
 on:
   schedule:
-    - cron: '0 * * * *'   # every hour
+    - cron: '0 * * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run:
@@ -19,22 +22,20 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install aiohttp aiohttp_socks maxminddb
+        run: pip install aiohttp aiohttp_socks maxminddb
 
       - name: Run script
-        run: python script.py
+        run: python your_script.py
 
-      - name: Commit & Push results
+      - name: Commit & Push
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
           git add IN_*.TXT
 
-          # Only commit if there are changes
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No changes"
           else
             git commit -m "Update proxy lists [skip ci]"
             git push
