@@ -7,10 +7,11 @@ import os
 import time
 import maxminddb
 import logging
+import random
 from aiohttp_socks import ProxyConnector, ProxyError, ProxyConnectionError, ProxyTimeoutError
 
 # --- CONFIGURATION ---
-TIMEOUT = 4.0
+TIMEOUT = 5.0 # Slightly increased from 4.0 to give SOCKS proxies time to complete the SSL handshake with Crunchyroll
 MAX_CONCURRENT_CHECKERS = 60 # Set to 60 for stability
 STATUS_UPDATE_INTERVAL = 50  # Log progress every 50 checks
 DB_PATH = 'GeoLite2-Country.mmdb'
@@ -100,24 +101,22 @@ class StrictProxyCollector:
         try:
             data = json.loads(text)
 
-            # Helper to safely get nested keys without crashing on None
             def safe_get(d, keys):
                 for k in keys:
                     if isinstance(d, dict): d = d.get(k)
                     else: return None
                 return d
 
-            if parser_type == 'set3': # Bes-js
+            if parser_type == 'set3': 
                 items = data if isinstance(data, list) else []
                 for item in items:
                     if safe_get(item, ['geolocation', 'countryCode']) == "IN":
                         self.add(item.get('ip'), item.get('port'), item.get('protocol', 'http'), False, src)
                         c+=1
 
-            elif parser_type == 'set14': # Monosans (Fixed Crash Here)
+            elif parser_type == 'set14': 
                 items = data if isinstance(data, list) else []
                 for item in items:
-                    # Defensive coding: get('geolocation') or {} handles None return
                     geo = item.get('geolocation') or {}
                     country = geo.get('country') or {}
                     if country.get('iso_code') == 'IN':
@@ -125,7 +124,7 @@ class StrictProxyCollector:
                         self.add(host, item.get('port'), item.get('protocol'), False, src)
                         c+=1
 
-            elif parser_type == 'set19': # MauriceGift
+            elif parser_type == 'set19': 
                 if isinstance(data, dict):
                     for k, v in data.items():
                         if v.get('countryCode') == 'IN':
@@ -134,7 +133,7 @@ class StrictProxyCollector:
                                 self.add(m.group(2), m.group(3), m.group(1), False, src)
                                 c+=1
 
-            elif parser_type == 'set20': # Themiralay
+            elif parser_type == 'set20': 
                 items = data if isinstance(data, list) else []
                 for item in items:
                     if safe_get(item, ['geolocation', 'countryCode']) == 'IN':
@@ -142,7 +141,6 @@ class StrictProxyCollector:
                         c+=1
 
         except Exception as e:
-            # We skip failed JSON but don't crash the script
             pass
         return c
 
@@ -231,20 +229,107 @@ class StrictProxyCollector:
                 logger.info(f"Checked {self.processed_count}/{self.total_candidates} ({pct:.1f}%) - Found {alive} Alive")
 
     async def _check(self, session, ip, port, proto):
-        target = "http://httpbin.org/ip"
+        # Define the 4 target requests targeting Crunchyroll endpoints
+        cr_requests = [
+            {
+                "method": "GET",
+                "url": "https://www.crunchyroll.com/tizen/manifest.json",
+                "headers": {
+                    "Host": "www.crunchyroll.com",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                    "Accept": "*/*",
+                    "Sec-Fetch-Site": "same-origin",
+                    "Sec-Fetch-Mode": "cors",
+                    "Sec-Fetch-Dest": "manifest",
+                    "Referer": "https://www.crunchyroll.com/tizen/",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Priority": "u=0"
+                },
+                "data": None
+            },
+            {
+                "method": "POST",
+                "url": "https://beta-api.crunchyroll.com/auth/v1/token",
+                "headers": {
+                    "Host": "beta-api.crunchyroll.com",
+                    "Authorization": "Basic eHVuaWh2ZWRidDNtYmlzdWhldnQ6MWtJUzVkeVR2akUwX3JxYUEzWWVBaDBiVVhVbXhXMTE=",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": "https://www.crunchyroll.com",
+                    "Sec-Fetch-Site": "same-site",
+                    "Sec-Fetch-Mode": "cors",
+                    "Sec-Fetch-Dest": "empty",
+                    "Referer": "https://www.crunchyroll.com/",
+                    "Priority": "u=0, i"
+                },
+                "data": "grant_type=client_id"
+            },
+            {
+                "method": "POST",
+                "url": "https://beta-api.crunchyroll.com/auth/v1/device/code",
+                "headers": {
+                    "Host": "beta-api.crunchyroll.com",
+                    "Authorization": "Basic eHVuaWh2ZWRidDNtYmlzdWhldnQ6MWtJUzVkeVR2akUwX3JxYUEzWWVBaDBiVVhVbXhXMTE=",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                    "Accept": "application/json, text/plain, */*",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": "https://www.crunchyroll.com",
+                    "Sec-Fetch-Site": "same-site",
+                    "Sec-Fetch-Mode": "cors",
+                    "Sec-Fetch-Dest": "empty",
+                    "Referer": "https://www.crunchyroll.com/",
+                    "Priority": "u=0, i"
+                },
+                "data": "grant_type=client_id"
+            },
+            {
+                "method": "GET",
+                "url": "https://static.crunchyroll.com/config/cx-web/config.json",
+                "headers": {
+                    "Host": "static.crunchyroll.com",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+                    "Origin": "https://www.crunchyroll.com",
+                    "Sec-Fetch-Site": "same-site",
+                    "Sec-Fetch-Mode": "cors",
+                    "Sec-Fetch-Dest": "empty",
+                    "Referer": "https://www.crunchyroll.com/",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Priority": "u=0, i"
+                },
+                "data": None
+            }
+        ]
+
+        # Select a random request profile for this proxy attempt
+        req = random.choice(cr_requests)
+
+        # Build proxy URL for aiohttp_socks
         prox_url = f"{proto}://{ip}:{port}"
-        if proto == 'https':
-            prox_url = f"http://{ip}:{port}"
-            target = "https://httpbin.org/ip"
-        elif proto == 'http':
+        if proto in ['http', 'https']:
+            # Establish standard HTTP proxy connection for tunneling HTTPS
             prox_url = f"http://{ip}:{port}"
 
         try:
             connector = ProxyConnector.from_url(prox_url)
+            # Create a session dynamically with the connector
             async with aiohttp.ClientSession(connector=connector) as sess:
-                async with sess.get(target, timeout=TIMEOUT) as resp:
-                    return resp.status == 200
-        except: return False
+                
+                if req["method"] == "GET":
+                    async with sess.get(req["url"], headers=req["headers"], timeout=TIMEOUT) as resp:
+                        # Success only if connection succeeds AND Crunchyroll doesn't block it
+                        return resp.status == 200
+                        
+                elif req["method"] == "POST":
+                    async with sess.post(req["url"], headers=req["headers"], data=req["data"], timeout=TIMEOUT) as resp:
+                        return resp.status == 200
+
+        except (ProxyError, ProxyConnectionError, ProxyTimeoutError, asyncio.TimeoutError):
+            return False
+        except Exception:
+            return False
 
     async def pipeline(self):
         print("\n=== STARTING PROXY COLLECTOR ===")
