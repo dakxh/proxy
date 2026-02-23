@@ -13,7 +13,7 @@ from aiohttp_socks import ProxyConnector, ProxyError, ProxyConnectionError, Prox
 # --- CONFIGURATION ---
 TIMEOUT = 5.0 # Slightly increased from 4.0 to give SOCKS proxies time to complete the SSL handshake with Crunchyroll
 MAX_CONCURRENT_CHECKERS = 60 # Set to 60 for stability
-STATUS_UPDATE_INTERVAL = 50  # Log progress every 50 checks
+STATUS_UPDATE_INTERVAL = 500  # Log progress every 50 checks
 DB_PATH = 'GeoLite2-Country.mmdb'
 DB_URL = "https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-Country.mmdb"
 
